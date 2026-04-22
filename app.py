@@ -1,20 +1,3 @@
-# ============================
-# One-cell Streamlit launcher (dashboard)
-# This cell will:
-# 1) Write the Streamlit dashboard code into app_8505.py
-# 2) Run the Streamlit app on port 8505
-# 3) Open the dashboard using: http://localhost:8505
-# ============================
-
-import textwrap
-import os
-import sys
-import subprocess
-
-APP_FILE = "app_8505.py"
-PORT = 8505
-
-app_code = r'''
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -175,9 +158,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# Helper functions
-# -----------------------------
 MONTH_ORDER = {
     "JAN": 1, "JANUARY": 1,
     "FEB": 2, "FEBRUARY": 2,
@@ -453,9 +433,6 @@ def top5_vertical_ratio_chart(df_in, group_col, ratio_name, color_code):
     fig.update_xaxes(tickangle=0)
     return fig
 
-# -----------------------------
-# Load data
-# -----------------------------
 @st.cache_data(show_spinner=False)
 def load_data(path, sheet):
     df = pd.read_excel(path, sheet_name=sheet)
@@ -468,10 +445,7 @@ def load_data(path, sheet):
     df = df.rename(columns={
         "Unit": "Factory",
         "Calling Name": "Customer",
-        "Garment item type": "Product"
-    })
-
-    df = df.rename(columns={
+        "Garment item type": "Product",
         "Order Qty": "OrderQty",
         "Cut Qty": "CutQty",
         "Ship Qty": "ShipQty",
@@ -489,7 +463,8 @@ def load_data(path, sheet):
     required = ["Year", "Week", "Factory", "Customer", "Product", "OrderQty", "CutQty", "ShipQty", "Month"]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+        st.error(f"Missing required columns: {missing}")
+        st.stop()
 
     for c in ["OrderQty", "CutQty", "ShipQty"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -507,11 +482,15 @@ def load_data(path, sheet):
     df = df.dropna(subset=["OrderQty", "CutQty", "ShipQty"], how="all")
     return df
 
-df = load_data(EXCEL_PATH, SHEET_NAME)
+try:
+    df = load_data(EXCEL_PATH, SHEET_NAME)
+except FileNotFoundError:
+    st.error("Excel file not found. Make sure 'Cut to Ship Modified Cleaned.xlsx' is uploaded in the same GitHub repo as app.py.")
+    st.stop()
+except Exception as e:
+    st.error(f"Data load failed: {e}")
+    st.stop()
 
-# -----------------------------
-# Hero section
-# -----------------------------
 st.markdown("""
 <div class="hero-box">
     <div class="hero-title">Cut to Ship Dashboard</div>
@@ -519,9 +498,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# -----------------------------
-# Sidebar filters
-# -----------------------------
 st.sidebar.markdown('<div class="sidebar-card">', unsafe_allow_html=True)
 st.sidebar.header("Filters")
 
@@ -564,9 +540,6 @@ if f_product:
 st.sidebar.caption(f"Rows after filters: {len(fdf):,}")
 st.sidebar.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------
-# Page selector
-# -----------------------------
 page = st.selectbox(
     "Select Page",
     [
@@ -580,9 +553,6 @@ page = st.selectbox(
     ]
 )
 
-# -----------------------------
-# Page 1: Overall
-# -----------------------------
 if page == "1 Overall":
     st.markdown('<div class="page-title">Overall Performance</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-subtitle">Weekly and monthly ratio movement.</div>', unsafe_allow_html=True)
@@ -625,11 +595,10 @@ if page == "1 Overall":
             value_name="Value"
         )
 
+        color_field = "Metric"
         if len(display_years) > 1:
             wk_ratio["Series"] = wk_ratio["Metric"] + " (" + wk_ratio["Year"].astype(str) + ")"
             color_field = "Series"
-        else:
-            color_field = "Metric"
 
         max_week = wk["Week_Num"].dropna().max()
         max_week = 52 if pd.isna(max_week) else max(52, int(max_week))
@@ -661,11 +630,10 @@ if page == "1 Overall":
             value_name="Value"
         )
 
+        color_field = "Metric"
         if len(display_years) > 1:
             mt_ratio["Series"] = mt_ratio["Metric"] + " (" + mt_ratio["Year"].astype(str) + ")"
             color_field = "Series"
-        else:
-            color_field = "Metric"
 
         fig_month = px.line(
             mt_ratio,
@@ -685,152 +653,82 @@ if page == "1 Overall":
         st.plotly_chart(fig_month, width="stretch")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="section-box">', unsafe_allow_html=True)
-    with st.expander("Weekly totals table", expanded=False):
-        wk_disp = wk.copy()
-        wk_disp = style_ratio_display_table(
-            wk_disp[["Year", "Week_Num", "OrderQty", "CutQty", "ShipQty", "CutShipDiff", "Cut/Ship", "Order/Ship", "Order/Cut"]],
-            ["Cut/Ship", "Order/Ship", "Order/Cut"]
-        )
-        st.dataframe(wk_disp, width="stretch", hide_index=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -----------------------------
-# Page 2: Cut/Ship
-# -----------------------------
 elif page == "2 Cut/Ship":
     st.markdown('<div class="page-title">Cut/Ship</div>', unsafe_allow_html=True)
     tabs = st.tabs(["Customer (Top 10)", "Product (Top 10)", "Factory (Top 10)"])
-
     with tabs[0]:
         ratio_tab_chart(fdf, "Customer", "Cut/Ship")
-
     with tabs[1]:
         ratio_tab_chart(fdf, "Product", "Cut/Ship")
-
     with tabs[2]:
         ratio_tab_chart(fdf, "Factory", "Cut/Ship")
 
-# -----------------------------
-# Page 3: Order/Ship
-# -----------------------------
 elif page == "3 Order/Ship":
     st.markdown('<div class="page-title">Order/Ship</div>', unsafe_allow_html=True)
     tabs = st.tabs(["Customer (Top 10)", "Product (Top 10)", "Factory (Top 10)"])
-
     with tabs[0]:
         ratio_tab_chart(fdf, "Customer", "Order/Ship")
-
     with tabs[1]:
         ratio_tab_chart(fdf, "Product", "Order/Ship")
-
     with tabs[2]:
         ratio_tab_chart(fdf, "Factory", "Order/Ship")
 
-# -----------------------------
-# Page 4: Order/Cut
-# -----------------------------
 elif page == "4 Order/Cut":
     st.markdown('<div class="page-title">Order/Cut</div>', unsafe_allow_html=True)
     tabs = st.tabs(["Customer (Top 10)", "Product (Top 10)", "Factory (Top 10)"])
-
     with tabs[0]:
         ratio_tab_chart(fdf, "Customer", "Order/Cut")
-
     with tabs[1]:
         ratio_tab_chart(fdf, "Product", "Order/Cut")
-
     with tabs[2]:
         ratio_tab_chart(fdf, "Factory", "Order/Cut")
 
-# -----------------------------
-# Page 5: Cut Ship Difference
-# -----------------------------
 elif page == "5 Cut Ship Difference":
     st.markdown('<div class="page-title">Cut Ship Difference Analysis</div>', unsafe_allow_html=True)
 
-    if "CutShipDiff" not in fdf.columns:
-        st.error("Column 'Cut Ship Difference' was not found or created.")
+    total_diff = fdf["CutShipDiff"].sum()
+    total_order = fdf["OrderQty"].sum()
+    total_cut = fdf["CutQty"].sum()
+    total_ship = fdf["ShipQty"].sum()
+
+    pct_order = safe_div(total_diff, total_order)
+    pct_cut = safe_div(total_diff, total_cut)
+    pct_ship = safe_div(total_diff, total_ship)
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(metric_card_html("Total Cut Ship Difference", num_fmt(total_diff)), unsafe_allow_html=True)
+    with c2:
+        st.markdown(metric_card_html("As % of Order Qty", percent_fmt(pct_order, 1)), unsafe_allow_html=True)
+    with c3:
+        st.markdown(metric_card_html("As % of Cut Qty", percent_fmt(pct_cut, 1)), unsafe_allow_html=True)
+    with c4:
+        st.markdown(metric_card_html("As % of Ship Qty", percent_fmt(pct_ship, 1)), unsafe_allow_html=True)
+
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.subheader("Reason Wise Breakdown of Cut Ship Difference")
+
+    breakdown = sum_diff_breakdown(fdf)
+    if breakdown.empty:
+        st.warning("No breakdown columns found from Metric A to Metric S.")
     else:
-        total_diff = fdf["CutShipDiff"].sum()
-        total_order = fdf["OrderQty"].sum()
-        total_cut = fdf["CutQty"].sum()
-        total_ship = fdf["ShipQty"].sum()
+        bdf = breakdown.reset_index()
+        bdf.columns = ["Reason", "Qty"]
 
-        pct_order = safe_div(total_diff, total_order)
-        pct_cut = safe_div(total_diff, total_cut)
-        pct_ship = safe_div(total_diff, total_ship)
+        fig_reason = px.pie(
+            bdf,
+            names="Reason",
+            values="Qty",
+            color_discrete_sequence=CORPORATE_COLORS
+        )
+        fig_reason.update_traces(textinfo="percent+label")
+        fig_reason.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig_reason, width="stretch")
 
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.markdown(metric_card_html("Total Cut Ship Difference", num_fmt(total_diff)), unsafe_allow_html=True)
-        with c2:
-            st.markdown(metric_card_html("As % of Order Qty", percent_fmt(pct_order, 1)), unsafe_allow_html=True)
-        with c3:
-            st.markdown(metric_card_html("As % of Cut Qty", percent_fmt(pct_cut, 1)), unsafe_allow_html=True)
-        with c4:
-            st.markdown(metric_card_html("As % of Ship Qty", percent_fmt(pct_ship, 1)), unsafe_allow_html=True)
+        bdf = style_ratio_display_table(bdf, [])
+        st.dataframe(bdf, width="stretch", hide_index=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.subheader("Reason Wise Breakdown of Cut Ship Difference")
-
-        breakdown = sum_diff_breakdown(fdf)
-        if breakdown.empty:
-            st.warning("No breakdown columns found from Metric A to Metric S.")
-        else:
-            bdf = breakdown.reset_index()
-            bdf.columns = ["Reason", "Qty"]
-
-            fig_reason = px.pie(
-                bdf,
-                names="Reason",
-                values="Qty",
-                color_discrete_sequence=CORPORATE_COLORS
-            )
-            fig_reason.update_traces(textinfo="percent+label")
-            fig_reason.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_reason, width="stretch")
-
-            bdf = style_ratio_display_table(bdf, [])
-            st.dataframe(bdf, width="stretch", hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="section-box">', unsafe_allow_html=True)
-        st.subheader("Factory, Customer and Product Wise Cut Ship Difference")
-
-        t1, t2, t3 = st.tabs(["Factory", "Customer (Top 10)", "Product (Top 10)"])
-
-        with t1:
-            fac = fdf.groupby("Factory", as_index=False)["CutShipDiff"].sum().sort_values("CutShipDiff", ascending=False)
-            fig_fac = px.pie(fac, names="Factory", values="CutShipDiff", color_discrete_sequence=CORPORATE_COLORS)
-            fig_fac.update_traces(textinfo="percent+label")
-            fig_fac.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_fac, width="stretch")
-            fac = style_ratio_display_table(fac, [])
-            st.dataframe(fac, width="stretch", hide_index=True)
-
-        with t2:
-            cust = top_n_cutshipdiff(fdf, "Customer", 10)
-            fig_cust = px.pie(cust, names="Customer", values="CutShipDiff", color_discrete_sequence=CORPORATE_COLORS)
-            fig_cust.update_traces(textinfo="percent+label")
-            fig_cust.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_cust, width="stretch")
-            cust = style_ratio_display_table(cust, [])
-            st.dataframe(cust, width="stretch", hide_index=True)
-
-        with t3:
-            prod = top_n_cutshipdiff(fdf, "Product", 10)
-            fig_prod = px.pie(prod, names="Product", values="CutShipDiff", color_discrete_sequence=CORPORATE_COLORS)
-            fig_prod.update_traces(textinfo="percent+label")
-            fig_prod.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_prod, width="stretch")
-            prod = style_ratio_display_table(prod, [])
-            st.dataframe(prod, width="stretch", hide_index=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# -----------------------------
-# Page 6: YOY Cut Ship Difference
-# -----------------------------
 elif page == "6 Cut Ship Difference YOY":
     st.markdown('<div class="page-title">Year on Year Cut Ship Difference</div>', unsafe_allow_html=True)
     st.markdown('<div class="page-subtitle">Year summary with reason movement comparison.</div>', unsafe_allow_html=True)
@@ -902,9 +800,6 @@ elif page == "6 Cut Ship Difference YOY":
         st.warning("No breakdown columns found from Metric A to Metric S.")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# -----------------------------
-# Page 7: Latest Week Deep Dive
-# -----------------------------
 elif page == "7 Latest Week Deep Dive":
     st.markdown('<div class="page-title">Latest Week Deep Dive</div>', unsafe_allow_html=True)
 
@@ -973,7 +868,6 @@ elif page == "7 Latest Week Deep Dive":
             st.plotly_chart(top5_vertical_ratio_chart(cust, "Customer", "Cut/Ship", CORPORATE_COLORS[0]), width="stretch")
             st.plotly_chart(top5_vertical_ratio_chart(cust, "Customer", "Order/Ship", CORPORATE_COLORS[2]), width="stretch")
             st.plotly_chart(top5_vertical_ratio_chart(cust, "Customer", "Order/Cut", CORPORATE_COLORS[3]), width="stretch")
-
             cust_table = style_ratio_display_table(cust, ["Cut/Ship", "Order/Ship", "Order/Cut"])
             st.dataframe(cust_table, width="stretch", hide_index=True)
 
@@ -981,19 +875,5 @@ elif page == "7 Latest Week Deep Dive":
             st.plotly_chart(top5_vertical_ratio_chart(prod, "Product", "Cut/Ship", CORPORATE_COLORS[0]), width="stretch")
             st.plotly_chart(top5_vertical_ratio_chart(prod, "Product", "Order/Ship", CORPORATE_COLORS[2]), width="stretch")
             st.plotly_chart(top5_vertical_ratio_chart(prod, "Product", "Order/Cut", CORPORATE_COLORS[3]), width="stretch")
-
             prod_table = style_ratio_display_table(prod, ["Cut/Ship", "Order/Ship", "Order/Cut"])
             st.dataframe(prod_table, width="stretch", hide_index=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
-'''
-
-with open(APP_FILE, "w", encoding="utf-8") as f:
-    f.write(textwrap.dedent(app_code).lstrip())
-
-print(f"Wrote Streamlit app to: {os.path.abspath(APP_FILE)}")
-print(f"Running Streamlit on port {PORT} ...")
-print(f"Open in browser: http://localhost:{PORT}")
-
-cmd = [sys.executable, "-m", "streamlit", "run", APP_FILE, "--server.port", str(PORT)]
-subprocess.run(cmd)
